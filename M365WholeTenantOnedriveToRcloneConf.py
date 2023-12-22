@@ -69,7 +69,7 @@ with open("accounts.csv", "r") as csvfile:
             #get expiry
             #username=get_full_name(access_token)
             #username: a@c.com-> a
-            username="ent"+username.split("@")[0]
+            username= username.split("@")[0]
             print("username:",username)
             # construct the rclone config entry
             config_entry = "[{}]\ntype=onedrive\nclient_id={}\nclient_secret={}\ntoken={{\"access_token\":\"{}\",\"token_type\":\"Bearer\",\"refresh_token\":\"{}\",\"expiry\":\"2022-11-05T14:43:09.1206112+08:00\"}}\ndrive_id={}\ndrive_type=business\n".format(username, client_id, client_secret, access_token, refresh_token, drive_id)
