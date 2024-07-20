@@ -69,6 +69,10 @@ async function handleStatusRequest(url) {
             <body>
                 <div>
                     <p>Refresh Token: ${refreshToken}</p>
+                    
+                    <p>-----------------------------------------------------------------</p>
+                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>              <a href="https://t.me/acgdb_channel/71">Original Post</a></p>
+                    <p><strong>Welcome to <a href="https://acgdb.de">ACG Database</a>, where all ACG resources meet. </strong></p>
                 </div>
             </body>
             </html>
