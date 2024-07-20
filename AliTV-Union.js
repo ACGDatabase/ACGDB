@@ -90,7 +90,7 @@ async function handleStatusRequest(url) {
         `
         const responseHeaders = new Headers()
         responseHeaders.set('Content-Type', 'text/html')
-        responseHeaders.set('Refresh', '10; url=/check-status?sid=' + sid)
+        responseHeaders.set('Refresh', '10; url=/check-status?sid=' + sid + "&qrid=" + qrID)
         return new Response(html, { headers: responseHeaders })
     }
 }
