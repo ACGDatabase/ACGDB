@@ -38,9 +38,18 @@ async function handleAuthRequest() {
     responseHeaders.set('Refresh', '0; url=/check-status?sid=' + sid + "&qrid=" + qrID)
     responseHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate')
     const html = `
+        <!DOCTYPE html>
         <html>
-        <body>
-            <p>Redirecting to authentication status check...</p>
+        <head>
+            <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+            <title>Redirecting</title>
+        </head>
+        <body class="bg-light">
+            <div class="container mt-5">
+                <div class="alert alert-info" role="alert">
+                    Redirecting to authentication status check...
+                </div>
+            </div>
         </body>
         </html>
     `
@@ -65,15 +74,24 @@ async function handleStatusRequest(url) {
         const refreshToken = tokenData.data.refresh_token
 
         let html = `
+            <!DOCTYPE html>
             <html>
-            <body>
-                <div>
-                    <p>Refresh Token: </p>
-                    <p>${refreshToken}</p>
-                    
-                    <p>-----------------------------------------------------------------</p>
-                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
-                    <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet. </strong></p>
+            <head>
+                <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+                <title>Login Success</title>
+            </head>
+            <body class="bg-light">
+                <div class="container mt-5">
+                    <div class="card">
+                        <div class="card-body">
+                            <h5 class="card-title">Refresh Token</h5>
+                            <p class="card-text">${refreshToken}</p>
+                            <hr>
+                            <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a></p>
+                            <p><a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
+                            <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet.</strong></p>
+                        </div>
+                    </div>
                 </div>
             </body>
             </html>
@@ -83,16 +101,25 @@ async function handleStatusRequest(url) {
         const qrLink = "https://openapi.alipan.com/oauth/qrcode/"+ qrID
 
         let html = `
+            <!DOCTYPE html>
             <html>
-            <body>
-                <div>
-                    <img src="${qrLink}" alt="QR Code"/>
-                    <p>Or login using <a href="https://www.aliyundrive.com/o/oauth/authorize?sid=${sid}" target="_blank">this link</a></p>
-                    <p>Waiting for authentication...</p>
-
-                    <p>-----------------------------------------------------------------</p>
-                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
-                    <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet. </strong></p>
+            <head>
+                <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+                <title>Waiting for Authentication</title>
+            </head>
+            <body class="bg-light">
+                <div class="container mt-5">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <img src="${qrLink}" alt="QR Code" class="img-fluid"/>
+                            <p class="mt-3">Or login using <a href="https://www.aliyundrive.com/o/oauth/authorize?sid=${sid}" target="_blank">this link</a></p>
+                            <p class="text-muted">Waiting for authentication...</p>
+                            <hr>
+                            <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a></p>
+                            <p><a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
+                            <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet.</strong></p>
+                        </div>
+                    </div>
                 </div>
             </body>
             </html>
