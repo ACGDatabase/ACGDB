@@ -41,15 +41,31 @@ async function handleAuthRequest() {
         <!DOCTYPE html>
         <html>
         <head>
-            <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+            <link href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
             <title>Redirecting</title>
+            <style>
+                body {
+                    background-color: #f5f5f5;
+                }
+                .hero-body {
+                    text-align: center;
+                }
+            </style>
         </head>
-        <body class="bg-light">
-            <div class="container mt-5">
-                <div class="alert alert-info" role="alert">
-                    Redirecting to authentication status check...
+        <body>
+            <section class="hero is-info is-fullheight">
+                <div class="hero-body">
+                    <div class="container">
+                        <h1 class="title">
+                            Redirecting
+                        </h1>
+                        <h2 class="subtitle">
+                            Redirecting to authentication status check...
+                        </h2>
+                        <button class="button is-loading">Loading</button>
+                    </div>
                 </div>
-            </div>
+            </section>
         </body>
         </html>
     `
@@ -77,22 +93,50 @@ async function handleStatusRequest(url) {
             <!DOCTYPE html>
             <html>
             <head>
-                <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+                <link href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
                 <title>Login Success</title>
+                <style>
+                    body {
+                        background-color: #f5f5f5;
+                    }
+                    .container {
+                        margin-top: 50px;
+                    }
+                    .box {
+                        padding: 20px;
+                    }
+                </style>
             </head>
-            <body class="bg-light">
-                <div class="container mt-5">
-                    <div class="card">
-                        <div class="card-body">
-                            <h5 class="card-title">Refresh Token</h5>
-                            <p class="card-text">${refreshToken}</p>
+            <body>
+                <section class="section">
+                    <div class="container">
+                        <div class="box">
+                            <h5 class="title is-5">Refresh Token</h5>
+                            <div class="field has-addons">
+                                <div class="control is-expanded">
+                                    <input id="refreshToken" class="input" type="text" value="${refreshToken}" readonly>
+                                </div>
+                                <div class="control">
+                                    <button id="copyButton" class="button is-info">
+                                        Copy
+                                    </button>
+                                </div>
+                            </div>
                             <hr>
                             <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a></p>
                             <p><a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
                             <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet.</strong></p>
                         </div>
                     </div>
-                </div>
+                </section>
+                <script>
+                    document.getElementById('copyButton').addEventListener('click', function() {
+                        const copyText = document.getElementById('refreshToken');
+                        copyText.select();
+                        copyText.setSelectionRange(0, 99999); // For mobile devices
+                        document.execCommand('copy');
+                    });
+                </script>
             </body>
             </html>
         `
@@ -104,23 +148,37 @@ async function handleStatusRequest(url) {
             <!DOCTYPE html>
             <html>
             <head>
-                <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css" rel="stylesheet">
+                <link href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
                 <title>Waiting for Authentication</title>
+                <style>
+                    body {
+                        background-color: #f5f5f5;
+                    }
+                    .container {
+                        margin-top: 50px;
+                        text-align: center;
+                    }
+                    .box {
+                        padding: 20px;
+                    }
+                </style>
             </head>
-            <body class="bg-light">
-                <div class="container mt-5">
-                    <div class="card">
-                        <div class="card-body text-center">
-                            <img src="${qrLink}" alt="QR Code" class="img-fluid"/>
+            <body>
+                <section class="section">
+                    <div class="container">
+                        <div class="box">
+                            <figure class="image is-128x128 is-inline-block">
+                                <img src="${qrLink}" alt="QR Code"/>
+                            </figure>
                             <p class="mt-3">Or login using <a href="https://www.aliyundrive.com/o/oauth/authorize?sid=${sid}" target="_blank">this link</a></p>
-                            <p class="text-muted">Waiting for authentication...</p>
+                            <p class="is-size-6 has-text-grey">Waiting for authentication...</p>
                             <hr>
                             <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a></p>
                             <p><a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
                             <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet.</strong></p>
                         </div>
                     </div>
-                </div>
+                </section>
             </body>
             </html>
         `
