@@ -32,8 +32,11 @@ async function handleAuthRequest() {
     const sid = qrData.sid
 
     const responseHeaders = new Headers()
+    const qrLink = qrData.qrCodeUrl
+    const qrID = qrLink.split('/qrcode/')[1]
     responseHeaders.set('Content-Type', 'text/html')
-    responseHeaders.set('Refresh', '0; url=/check-status?sid=' + sid)
+    responseHeaders.set('Refresh', '0; url=/check-status?sid=' + sid + "&qrid=" + qrID)
+    responseHeaders.set('Cache-Control', 'no-cache, no-store, must-revalidate')
     const html = `
         <html>
         <body>
@@ -46,7 +49,7 @@ async function handleAuthRequest() {
 
 async function handleStatusRequest(url) {
     const sid = url.searchParams.get('sid')
-
+    const qrID = url.searchParams.get('qrid')
     const statusResponse = await fetch(`https://openapi.alipan.com/oauth/qrcode/${sid}/status`)
     const statusData = await statusResponse.json()
     const status = statusData.status
@@ -72,18 +75,7 @@ async function handleStatusRequest(url) {
         `
         return new Response(html, { headers: { 'Content-Type': 'text/html' } })
     } else {
-        const qrResponse = await fetch('http://api.extscreen.com/aliyundrive/qrcode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-                'scopes': 'user:base,file:all:read,file:all:write',
-                'width': 500,
-                'height': 500
-            })
-        })
-
-        const qrData = await qrResponse.json().then(data => data.data)
-        const qrLink = qrData.qrCodeUrl
+        const qrLink = "https://openapi.alipan.com/oauth/qrcode/"+ qrID
 
         let html = `
             <html>
