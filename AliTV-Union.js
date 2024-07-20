@@ -84,6 +84,10 @@ async function handleStatusRequest(url) {
                     <img src="${qrLink}" alt="QR Code"/>
                     <p>Or login using <a href="https://www.aliyundrive.com/o/oauth/authorize?sid=${sid}" target="_blank">this link</a></p>
                     <p>Waiting for authentication...</p>
+
+                    <p>-----------------------------------------------------------------</p>
+                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>              <a href="https://t.me/acgdb_channel/71">Original Post</a></p>
+                    <p><strong>Welcome to <a href="https://acgdb.de">ACG Database</a>, where all ACG resources meet. </strong></p>
                 </div>
             </body>
             </html>
