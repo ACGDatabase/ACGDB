@@ -71,8 +71,8 @@ async function handleStatusRequest(url) {
                     <p>Refresh Token: ${refreshToken}</p>
                     
                     <p>-----------------------------------------------------------------</p>
-                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>              <a href="https://t.me/acgdb_channel/71">Original Post</a></p>
-                    <p><strong>Welcome to <a href="https://acgdb.de">ACG Database</a>, where all ACG resources meet. </strong></p>
+                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>              <a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
+                    <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet. </strong></p>
                 </div>
             </body>
             </html>
@@ -90,8 +90,8 @@ async function handleStatusRequest(url) {
                     <p>Waiting for authentication...</p>
 
                     <p>-----------------------------------------------------------------</p>
-                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>              <a href="https://t.me/acgdb_channel/71">Original Post</a></p>
-                    <p><strong>Welcome to <a href="https://acgdb.de">ACG Database</a>, where all ACG resources meet. </strong></p>
+                    <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a>              <a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
+                    <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet. </strong></p>
                 </div>
             </body>
             </html>
