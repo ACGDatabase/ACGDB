@@ -41,7 +41,7 @@ async function handleAuthRequest() {
         <!DOCTYPE html>
         <html>
         <head>
-            <link href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
+            <link href="https://cdn.jsdmirror.com/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
             <title>Redirecting</title>
             <style>
                 body {
@@ -93,7 +93,7 @@ async function handleStatusRequest(url) {
             <!DOCTYPE html>
             <html>
             <head>
-                <link href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
+                <link href="https://cdn.jsdmirror.com/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
                 <title>Login Success</title>
                 <style>
                     body {
@@ -148,7 +148,7 @@ async function handleStatusRequest(url) {
             <!DOCTYPE html>
             <html>
             <head>
-                <link href="https://cdn.jsdelivr.net/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
+                <link href="https://cdn.jsdmirror.com/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
                 <title>Waiting for Authentication</title>
                 <style>
                     body {
