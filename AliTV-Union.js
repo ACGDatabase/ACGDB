@@ -83,70 +83,103 @@ async function handleStatusRequest(url) {
         const authCode = statusData.authCode
         const tokenResponse = await fetch('http://api.extscreen.com/aliyundrive/v2/token', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded'  , "token": "6733b42e28cdba32", "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; M2012K11AC Build/TKQ1.221114.001) AppleWebKit/533.1 (KHTML, like Gecko) Mobile Safari/533.1"},
-            body: "code=" + authCode
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'token': '6733b42e28cdba32'
+            },
+            body: new URLSearchParams({ 'code': authCode })
         })
-        const tokenData = await tokenResponse.json()
+        const tokenResponseText = await tokenResponse.text()
 
-        // Decrypt the token data and parse JSON
-        const { iv, ciphertext } = tokenData.data
-        const decryptedText = await decryptToken(iv, ciphertext)
-        const tokenJson = JSON.parse(decryptedText)
-        
-        const refreshToken = tokenJson.refresh_token
+        const ivMatch = tokenResponseText.match(/"iv":"(.*?)"/)
+        const ciphertextMatch = tokenResponseText.match(/"ciphertext":"(.*?)"/)
 
-        let html = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <link href="https://cdn.jsdmirror.com/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
-                <title>Login Success</title>
-                <style>
-                    body {
-                        background-color: #f5f5f5;
-                    }
-                    .container {
-                        margin-top: 50px;
-                    }
-                    .box {
-                        padding: 20px;
-                    }
-                </style>
-            </head>
-            <body>
-                <section class="section">
-                    <div class="container">
-                        <div class="box">
-                            <h5 class="title is-5">Refresh Token</h5>
-                            <div class="field has-addons">
-                                <div class="control is-expanded">
-                                    <input id="refreshToken" class="input" type="text" value="${refreshToken}" readonly>
+        if (!ivMatch || !ciphertextMatch) {
+            return new Response(JSON.stringify({ error: "Failed to extract token data" }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+        }
+
+        const iv = hexStringToUint8Array(ivMatch[1])
+        const ciphertext = base64StringToUint8Array(ciphertextMatch[1])
+        const key = await importKeyFromString("^(i/x>>5(ebyhumz*i1wkpk^orIs^Na.")
+
+        try {
+            const decrypted = await decryptAES(key, iv, ciphertext)
+            const tokenInfo = JSON.parse(new TextDecoder().decode(decrypted))
+            const refreshToken = tokenInfo.refresh_token
+            const accessToken = tokenInfo.access_token || ''
+
+            let html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <link href="https://cdn.jsdmirror.com/npm/bulma@0.9.3/css/bulma.min.css" rel="stylesheet">
+                    <title>Login Success</title>
+                    <style>
+                        body {
+                            background-color: #f5f5f5;
+                        }
+                        .container {
+                            margin-top: 50px;
+                        }
+                        .box {
+                            padding: 20px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <section class="section">
+                        <div class="container">
+                            <div class="box">
+                                <h5 class="title is-5">Refresh Token</h5>
+                                <div class="field has-addons">
+                                    <div class="control is-expanded">
+                                        <input id="refreshToken" class="input" type="text" value="${refreshToken}" readonly>
+                                    </div>
+                                    <div class="control">
+                                        <button id="copyButton" class="button is-info">
+                                            Copy
+                                        </button>
+                                    </div>
                                 </div>
-                                <div class="control">
-                                    <button id="copyButton" class="button is-info">
-                                        Copy
-                                    </button>
-                                </div>
+                                ${accessToken ? `<h5 class="title is-5 mt-3">Access Token</h5>
+                                <div class="field has-addons">
+                                    <div class="control is-expanded">
+                                        <input id="accessToken" class="input" type="text" value="${accessToken}" readonly>
+                                    </div>
+                                    <div class="control">
+                                        <button id="copyAccessButton" class="button is-info">
+                                            Copy
+                                        </button>
+                                    </div>
+                                </div>` : ''}
+                                <hr>
+                                <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a></p>
+                                <p><a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
+                                <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet.</strong></p>
                             </div>
-                            <hr>
-                            <p><a href="https://github.com/ACGDatabase/ACGDB/blob/main/AliTV-Union.js" target="_blank">Source Code</a></p>
-                            <p><a href="https://t.me/acgdb_channel/71" target="_blank">Original Post</a></p>
-                            <p><strong>Welcome to <a href="https://acgdb.de" target="_blank">ACG Database</a>, where all ACG resources meet.</strong></p>
                         </div>
-                    </div>
-                </section>
-                <script>
-                    document.getElementById('copyButton').addEventListener('click', function() {
-                        const copyText = document.getElementById('refreshToken');
-                        copyText.select();
-                        copyText.setSelectionRange(0, 99999); // For mobile devices
-                        document.execCommand('copy');
-                    });
-                </script>
-            </body>
-            </html>
-        `
-        return new Response(html, { headers: { 'Content-Type': 'text/html' } })
+                    </section>
+                    <script>
+                        document.getElementById('copyButton').addEventListener('click', function() {
+                            const copyText = document.getElementById('refreshToken');
+                            copyText.select();
+                            copyText.setSelectionRange(0, 99999); // For mobile devices
+                            document.execCommand('copy');
+                        });
+                        document.getElementById('copyAccessButton')?.addEventListener('click', function() {
+                            const copyText = document.getElementById('accessToken');
+                            copyText.select();
+                            copyText.setSelectionRange(0, 99999); // For mobile devices
+                            document.execCommand('copy');
+                        });
+                    </script>
+                </body>
+                </html>
+            `
+            return new Response(html, { headers: { 'Content-Type': 'text/html' } })
+        } catch (e) {
+            return new Response(JSON.stringify({ error: "Failed to decrypt token data" }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+        }
     } else {
         const qrLink = "https://openapi.alipan.com/oauth/qrcode/"+ qrID
 
@@ -196,7 +229,7 @@ async function handleStatusRequest(url) {
 }
 
 async function handleTokenRequest(request) {
-    const originalUrl = "https://api.nn.ci/alist/ali_open/token"
+    const originalUrl = "http://api.extscreen.com/aliyundrive/v2/token"
     const { headers } = request
     const body = await request.json()
 
@@ -208,7 +241,10 @@ async function handleTokenRequest(request) {
     if (clientId && clientSecret) {
         const response = await fetch(originalUrl, {
             method: 'POST',
-            headers: headers,
+            headers: {
+                ...headers,
+                'token': '6733b42e28cdba32'
+            },
             body: JSON.stringify(body)
         })
         const data = await response.json()
@@ -225,7 +261,10 @@ async function handleTokenRequest(request) {
     if (decodedToken.aud !== '6b5b52e144f748f78b3f96a2626ed5d7') {
         const response = await fetch(originalUrl, {
             method: 'POST',
-            headers: headers,
+            headers: {
+                ...headers,
+                'token': '6733b42e28cdba32'
+            },
             body: JSON.stringify(body)
         })
         const data = await response.json()
@@ -234,7 +273,10 @@ async function handleTokenRequest(request) {
 
     const tokenInfoResponse = await fetch('http://api.extscreen.com/aliyundrive/v2/token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded'  , "token": "6733b42e28cdba32", "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; M2012K11AC Build/TKQ1.221114.001) AppleWebKit/533.1 (KHTML, like Gecko) Mobile Safari/533.1"},
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'token': '6733b42e28cdba32'
+        },
         body: new URLSearchParams({ 'refresh_token': refreshToken })
     })
 
@@ -242,36 +284,74 @@ async function handleTokenRequest(request) {
         return new Response(JSON.stringify({ error: "Failed to fetch token info" }), { status: 500, headers: { 'Content-Type': 'application/json' } })
     }
 
-    const tokenInfo = await tokenInfoResponse.json().then(data => data.data)
+    const tokenResponseText = await tokenInfoResponse.text()
 
-    // Decrypt the token data and parse JSON
-    const { iv, ciphertext } = tokenInfo
-    const decryptedText = await decryptToken(iv, ciphertext)
-    const tokenJson = JSON.parse(decryptedText)
+    const ivMatch = tokenResponseText.match(/"iv":"(.*?)"/)
+    const ciphertextMatch = tokenResponseText.match(/"ciphertext":"(.*?)"/)
 
-    const accessToken = tokenJson.access_token
-    const newRefreshToken = tokenJson.refresh_token
+    if (!ivMatch || !ciphertextMatch) {
+        return new Response(JSON.stringify({ error: "Failed to extract token data" }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
 
-    return new Response(JSON.stringify({
-        token_type: "Bearer",
-        access_token: accessToken,
-        refresh_token: newRefreshToken,
-        expires_in: 7200
-    }), { headers: { 'Content-Type': 'application/json' } })
+    const iv = hexStringToUint8Array(ivMatch[1])
+    const ciphertext = base64StringToUint8Array(ciphertextMatch[1])
+    const key = await importKeyFromString("^(i/x>>5(ebyhumz*i1wkpk^orIs^Na.")
+
+    try {
+        const decrypted = await decryptAES(key, iv, ciphertext)
+        const tokenInfo = JSON.parse(new TextDecoder().decode(decrypted))
+
+        const accessToken = tokenInfo.access_token
+        const newRefreshToken = tokenInfo.refresh_token
+
+        return new Response(JSON.stringify({
+            token_type: "Bearer",
+            access_token: accessToken,
+            refresh_token: newRefreshToken,
+            expires_in: 7200
+        }), { headers: { 'Content-Type': 'application/json' } })
+    } catch (e) {
+        return new Response(JSON.stringify({ error: "Failed to decrypt token data" }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
 }
 
-async function decryptToken(iv_hex, ciphertext_b64) {
-    const key = new TextEncoder().encode("^(i/x>>5(ebyhumz*i1wkpk^orIs^Na.")
-    const iv = Uint8Array.from(iv_hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)))
-    const ciphertext = Uint8Array.from(atob(ciphertext_b64), c => c.charCodeAt(0))
+// Helper Functions
+function hexStringToUint8Array(hexString) {
+    const result = []
+    for (let i = 0; i < hexString.length; i += 2) {
+        result.push(parseInt(hexString.substr(i, 2), 16))
+    }
+    return new Uint8Array(result)
+}
 
-    const importedKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['decrypt'])
-    const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, importedKey, ciphertext)
+function base64StringToUint8Array(base64String) {
+    const binaryString = atob(base64String)
+    const len = binaryString.length
+    const bytes = new Uint8Array(len)
+    for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i)
+    }
+    return bytes
+}
 
-    // Assuming the plaintext was padded, remove the padding
-    const plaintext = new Uint8Array(decrypted)
-    const padLen = plaintext[plaintext.length - 1]
-    const unpaddedPlaintext = plaintext.slice(0, -padLen)
+async function importKeyFromString(keyString) {
+    const keyData = new TextEncoder().encode(keyString)
+    return await crypto.subtle.importKey(
+        'raw',
+        keyData,
+        { name: 'AES-CBC' },
+        false,
+        ['decrypt']
+    )
+}
 
-    return new TextDecoder().decode(unpaddedPlaintext)
+async function decryptAES(key, iv, ciphertext) {
+    return await crypto.subtle.decrypt(
+        {
+            name: 'AES-CBC',
+            iv: iv
+        },
+        key,
+        ciphertext
+    )
 }
