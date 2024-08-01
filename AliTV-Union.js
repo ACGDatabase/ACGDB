@@ -81,13 +81,19 @@ async function handleStatusRequest(url) {
 
     if (status === 'LoginSuccess') {
         const authCode = statusData.authCode
-        const tokenResponse = await fetch('http://api.extscreen.com/aliyundrive/token', {
+        const tokenResponse = await fetch('http://api.extscreen.com/aliyundrive/v2/token', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ 'code': authCode })
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded'  , "token": "6733b42e28cdba32", "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; M2012K11AC Build/TKQ1.221114.001) AppleWebKit/533.1 (KHTML, like Gecko) Mobile Safari/533.1"},
+            body: "code=" + authCode
         })
         const tokenData = await tokenResponse.json()
-        const refreshToken = tokenData.data.refresh_token
+
+        // Decrypt the token data and parse JSON
+        const { iv, ciphertext } = tokenData.data
+        const decryptedText = await decryptToken(iv, ciphertext)
+        const tokenJson = JSON.parse(decryptedText)
+        
+        const refreshToken = tokenJson.refresh_token
 
         let html = `
             <!DOCTYPE html>
@@ -226,9 +232,9 @@ async function handleTokenRequest(request) {
         return new Response(JSON.stringify(data), { status: response.status, headers: { 'Content-Type': 'application/json' } })
     }
 
-    const tokenInfoResponse = await fetch('http://api.extscreen.com/aliyundrive/token', {
+    const tokenInfoResponse = await fetch('http://api.extscreen.com/aliyundrive/v2/token', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded'  , "token": "6733b42e28cdba32", "User-Agent": "Mozilla/5.0 (Linux; U; Android 13; zh-cn; M2012K11AC Build/TKQ1.221114.001) AppleWebKit/533.1 (KHTML, like Gecko) Mobile Safari/533.1"},
         body: new URLSearchParams({ 'refresh_token': refreshToken })
     })
 
@@ -237,8 +243,14 @@ async function handleTokenRequest(request) {
     }
 
     const tokenInfo = await tokenInfoResponse.json().then(data => data.data)
-    const accessToken = tokenInfo.access_token
-    const newRefreshToken = tokenInfo.refresh_token
+
+    // Decrypt the token data and parse JSON
+    const { iv, ciphertext } = tokenInfo
+    const decryptedText = await decryptToken(iv, ciphertext)
+    const tokenJson = JSON.parse(decryptedText)
+
+    const accessToken = tokenJson.access_token
+    const newRefreshToken = tokenJson.refresh_token
 
     return new Response(JSON.stringify({
         token_type: "Bearer",
@@ -246,4 +258,20 @@ async function handleTokenRequest(request) {
         refresh_token: newRefreshToken,
         expires_in: 7200
     }), { headers: { 'Content-Type': 'application/json' } })
+}
+
+async function decryptToken(iv_hex, ciphertext_b64) {
+    const key = new TextEncoder().encode("^(i/x>>5(ebyhumz*i1wkpk^orIs^Na.")
+    const iv = Uint8Array.from(iv_hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)))
+    const ciphertext = Uint8Array.from(atob(ciphertext_b64), c => c.charCodeAt(0))
+
+    const importedKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['decrypt'])
+    const decrypted = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, importedKey, ciphertext)
+
+    // Assuming the plaintext was padded, remove the padding
+    const plaintext = new Uint8Array(decrypted)
+    const padLen = plaintext[plaintext.length - 1]
+    const unpaddedPlaintext = plaintext.slice(0, -padLen)
+
+    return new TextDecoder().decode(unpaddedPlaintext)
 }
