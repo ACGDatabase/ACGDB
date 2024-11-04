@@ -49,9 +49,9 @@ def get_codec() -> str:
     Get the appropriate codec based on the operating system.
 
     Returns:
-        str: 'gbk' for Windows, 'utf-8' otherwise.
+        str: 'utf-8' for all OS.
     """
-    return "gbk" if os.name == "nt" else "utf-8"
+    return "utf-8"
 
 
 def handle_remove_readonly(func, path, exc):
@@ -83,7 +83,7 @@ def extract_outpaths(output: bytes, codec: str) -> List[str]:
     for line in decoded_output:
         if line.startswith("Path = "):
             path = line.split(" = ", 1)[1]
-            if codec == "gbk":
+            if os.name == 'nt':
                 if '\\' not in path:
                     outpaths.append(path)
             else:
@@ -200,8 +200,6 @@ class ArchiveHandler:
 
                 # Recompress without password
                 outpaths = [os.path.join(self.dirpath, p) for p in outpaths]
-                if self.codec == "gbk":
-                    outpaths = [p.rstrip('\r') for p in outpaths]
 
                 self.recompress_archive(outpaths)
 
