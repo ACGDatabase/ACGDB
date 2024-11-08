@@ -11,4 +11,4 @@ If you like this project, please give me a star.
 
 **ACG Database: [https://acgdb.de](https://acgdb.de)**
 
-**ACGDB Premium: [https://acgdb.eu.org](https://acgdb.eu.org)**
+**ACGDB Premium: [https://acgdb.cc](https://acgdb.cc)**
