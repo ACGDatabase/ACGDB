@@ -21,27 +21,32 @@ def check_rar_installed():
         print("Error: 'rar' executable not found. Please install WinRAR and ensure 'rar.exe' is in your PATH.")
         exit(1)
 
-def is_password_protected(filepath: str, dummy_password: str = "worilepython") -> bool:
+def is_password_protected(filepath: str) -> bool:
     """
-    Check if the archive is password protected by attempting to list its contents
-    using a dummy password.
+    Check if the archive is password protected by examining the 'Encrypted' status of files.
 
     Args:
         filepath (str): Path to the archive file.
-        dummy_password (str): A dummy password to test protection.
 
     Returns:
         bool: True if the archive is password protected, False otherwise.
     """
     try:
-        subprocess.run(
-            ["7z", "l", f"-p{dummy_password}", filepath],
+        result = subprocess.run(
+            ["7z", "l", "-slt", filepath],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        return False
+        output = result.stdout.decode('utf-8')
+        # Parse the output to find 'Encrypted = +'
+        encrypted_files = re.findall(r'^Encrypted = \+', output, re.MULTILINE)
+        if encrypted_files:
+            return True
+        else:
+            return False
     except subprocess.CalledProcessError:
+        # If an error occurs (e.g., archive is corrupted), assume it's password-protected
         return True
 
 def get_codec() -> str:
@@ -52,7 +57,6 @@ def get_codec() -> str:
         str: 'utf-8' for all OS.
     """
     return "utf-8"
-
 
 def handle_remove_readonly(func, path, exc):
     """
@@ -246,7 +250,8 @@ class ArchiveHandler:
         Returns:
             List[str]: The command to recompress the archive.
         """
-        return ["rar", "a", "-ep1"]
+        # Include '-r' to handle empty directories
+        return ["rar", "a", "-ep1", "-r"]
 
     def recompress_archive(self, outpaths: List[str]):
         """
@@ -568,24 +573,10 @@ if __name__ == "__main__":
     check_rar_installed()  # Ensure 'rar' is available
     PASSWORD_LIST = [
         "免费分享倒卖死妈",
-        "xlxb1001",
-        "lawliet@south2022",
-        "木偶",
-        "yhsxsx1月",
-        "yhsxsx2月",
-        "yhsxsx3月",
-        "yhsxsx4月",
-        "yhsxsx5月",
-        "yhsxsx6月",
-        "yhsxsx7月",
-        "yhsxsx8月",
-        "yhsxsx9月",
-        "yhsxsx10月",
-        "yhsxsx11月",
-        "yhsxsx12月",
-        "yhsxsx"
+        "xlxb1001"
     ]
-    TARGET_DIRECTORY = "D:\\tech\\rmpass-test"
+    # TARGET_DIRECTORY = "Z:\\115\\ppasmr\\V#1 中文专辑名压缩包\\#1 DLsite"
+    TARGET_DIRECTORY = "D:\\Tech\\rmpass-test"
     MAX_WORKERS = 4  # Adjust based on your CPU and I/O capabilities
 
     remove_rar_password(TARGET_DIRECTORY, PASSWORD_LIST, max_workers=MAX_WORKERS)
