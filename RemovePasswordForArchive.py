@@ -21,7 +21,7 @@ def check_rar_installed():
         print("Error: 'rar' executable not found. Please install WinRAR and ensure 'rar.exe' is in your PATH.")
         exit(1)
 
-def is_password_protected(filepath: str) -> bool:
+def is_password_protected(filepath: str, dummy_password: str = "worilepython") -> bool:
     """
     Check if the archive is password protected by examining the 'Encrypted' status of files.
 
@@ -33,7 +33,7 @@ def is_password_protected(filepath: str) -> bool:
     """
     try:
         result = subprocess.run(
-            ["7z", "l", "-slt", filepath],
+            ["7z", "l", "-slt", f"-p{dummy_password}", filepath],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
@@ -110,7 +110,7 @@ def execute_subprocess(command: List[str], **kwargs) -> subprocess.CompletedProc
     Raises:
         subprocess.CalledProcessError: If the subprocess fails.
     """
-    return subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
+    return subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, **kwargs)
 
 
 def recompress_archive(
@@ -183,38 +183,40 @@ class ArchiveHandler:
         """
         for password in password_list:
             print(f"Trying password '{password}' for '{self.filepath}'")
-            # logging.info(f"Trying password '{password}' for '{self.filepath}'")
             try:
                 # Attempt to list the archive contents with the password
                 list_cmd = self.get_list_command(password, is_split)
-                result = execute_subprocess(list_cmd)
-                outpaths = extract_outpaths(result.stdout, self.codec)
+                list_result = execute_subprocess(list_cmd)
+                outpaths = extract_outpaths(list_result.stdout, self.codec)
 
                 if not outpaths:
-                    # No contents found, possibly wrong password
                     print(f"No contents found with password '{password}' for '{self.filepath}'.")
                     continue
 
-                # Decompress the archive
+                # Attempt to decompress the archive
                 decompress_cmd = self.get_decompress_command(password, is_split)
-                execute_subprocess(decompress_cmd)
+                decompress_result = execute_subprocess(decompress_cmd)
+
+                # Check if extraction was successful
+                if decompress_result.returncode != 0 or b"Wrong password" in decompress_result.stderr:
+                    print(f"Extraction failed with password '{password}' for '{self.filepath}'.")
+                    clean_extracted_files(outpaths)
+                    continue
 
                 print(f"Password found for '{self.filepath}': {password}")
-                # logging.info(f"Password found for '{self.filepath}': {password}")
 
-                # Recompress without password
+                # Proceed with recompression
                 outpaths = [os.path.join(self.dirpath, p) for p in outpaths]
-
                 self.recompress_archive(outpaths)
 
-                # Clean up extracted files
+                # Clean up extracted files and original archive
                 clean_extracted_files(outpaths)
-                # Clean up the original archive
                 os.remove(self.filepath)
                 return True
-            except subprocess.CalledProcessError:
-                print("Wrong password or extraction failed, trying next...")
-                # logging.warning("Wrong password or extraction failed, trying next...")
+
+            except Exception as e:
+                print(f"Error: {e}")
+                continue
         return False
 
     def get_list_command(self, password: str, is_split: bool) -> List[str]:
@@ -283,7 +285,7 @@ class RARHandler(ArchiveHandler):
         return ["7z", "l", f"-p{password}","-ba","-slt", self.filepath]
 
     def get_decompress_command(self, password: str, is_split: bool) -> List[str]:
-        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath]
+        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath, "-y"]
 
     def output_archive_path(self) -> str:
         """
@@ -306,7 +308,7 @@ class SplitRARHandler(ArchiveHandler):
         return ["7z", "l", f"-p{password}","-ba","-slt", self.filepath]
 
     def get_decompress_command(self, password: str, is_split: bool) -> List[str]:
-        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath]
+        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath, "-y"]
 
     def output_archive_path(self) -> str:
         """
@@ -336,7 +338,7 @@ class StandardArchiveHandler(ArchiveHandler):
         return ["7z", "l", f"-p{password}","-ba","-slt", self.filepath]
 
     def get_decompress_command(self, password: str, is_split: bool) -> List[str]:
-        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath]
+        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath, "-y"]
 
     def output_archive_path(self) -> str:
         """
@@ -360,7 +362,7 @@ class SplitStandardArchiveHandler(ArchiveHandler):
         return ["7z", "l", f"-p{password}","-ba","-slt", self.filepath]
 
     def get_decompress_command(self, password: str, is_split: bool) -> List[str]:
-        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath]
+        return ["7z", "x", f"-o{self.dirpath}", f"-p{password}", self.filepath, "-y"]
 
     def output_archive_path(self) -> str:
         """
@@ -577,6 +579,6 @@ if __name__ == "__main__":
     ]
     # TARGET_DIRECTORY = "Z:\\115\\ppasmr\\V#1 中文专辑名压缩包\\#1 DLsite"
     TARGET_DIRECTORY = "D:\\Tech\\rmpass-test"
-    MAX_WORKERS = 4  # Adjust based on your CPU and I/O capabilities
+    MAX_WORKERS = 1  # Adjust based on your CPU and I/O capabilities
 
     remove_rar_password(TARGET_DIRECTORY, PASSWORD_LIST, max_workers=MAX_WORKERS)
