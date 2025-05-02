@@ -399,7 +399,7 @@ def convert_single_video(
         # Only attempt if flag is set OR album art is provided
         if add_metadata_flag or (album_art_data and album_art_mime):
             metadata_status = handle_metadata_tagging(
-                add_metadata_flag, video_path, temp_mp3_path, album_art_data, album_art_mime
+                add_metadata_flag, video_path, temp_output_path, album_art_data, album_art_mime
             )
             if metadata_status == 'failed':
                 # Decide if metadata failure should prevent the rename (treat as overall failure)
