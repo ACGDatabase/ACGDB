@@ -68,6 +68,11 @@ NO_AUDIO_STREAM_ERRORS = (
     "Stream map '0:a:0' matches no streams", # Common when using -map 0:a:0?
     "Output file #0 does not contain any stream" # Can happen if -map isn't used but still no audio
 )
+# List of folder names (case-insensitive) to completely ignore during scanning
+IGNORE_FOLDERS: List[str] = [
+    "[MissWarmJ]",
+    # Add more folder names here as needed, e.g., "backup", "[Old Stuff]"
+]
 
 
 # --- Helper Types ---
@@ -302,7 +307,10 @@ def handle_metadata_tagging(
          return 'skipped' # No text match and no art provided
 
     if not metadata and add_metadata_flag: # Log only if text meta was expected but not found
-         tqdm.write(f"Info: No metadata pattern matched for '{filename_stem}', skipping text tagging.")
+         # Check if the original filename itself matches the ignore pattern to suppress this message
+         # This check might be redundant if file is already excluded, but good safeguard
+         if not any(part.lower() == ignored.lower() for part in video_path.parts for ignored in IGNORE_FOLDERS):
+            tqdm.write(f"Info: No metadata pattern matched for '{filename_stem}', skipping text tagging.")
 
     # Attempt to add metadata (text and/or art)
     if add_metadata_to_mp3(temp_mp3_path, metadata, image_data, image_mime):
@@ -457,31 +465,61 @@ def convert_single_video(
 # --- File Discovery and Filtering ---
 
 def find_video_files(source_folder: Path) -> List[Path]:
-    """Finds all supported video files recursively."""
+    """Finds all supported video files recursively, skipping ignored folders."""
     video_files: List[Path] = []
     print(f"Scanning for video files in: {source_folder}")
+    if IGNORE_FOLDERS:
+        # Prepare lowercase version for efficient checking
+        ignore_folders_lower = {f.lower() for f in IGNORE_FOLDERS}
+        print(f"Ignoring folders (case-insensitive): {', '.join(IGNORE_FOLDERS)}")
+    else:
+        ignore_folders_lower = set()
+
     try:
         # Efficiently find all files first, then filter
         all_files_gen = source_folder.rglob("*")
-        # Wrap generator with tqdm if list conversion is too slow for large dirs
-        # Convert to list for stable progress bar, handle potential large directories
         try:
-            # Adjust miniters/mininterval for smoother progress bar on very fast scans
             all_files_list = list(tqdm(all_files_gen, desc="Discovering files", unit="file", leave=False, ncols=100, miniters=100, mininterval=0.1))
-        except TypeError: # Handle cases where len() is not supported directly
+        except TypeError:
             all_files_list = list(all_files_gen)
             print("Found a large number of files, discovery progress bar may be inaccurate.")
 
-
+        print(f"Filtering videos (ignoring specified folders)...")
+        ignored_count = 0
         for file_path in tqdm(all_files_list, desc="Filtering videos", unit="file", leave=False, ncols=100):
-            if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
-                # Basic check to avoid adding our own temp files if they somehow end up in source
-                if not file_path.name.endswith(TEMP_SUFFIX):
+            if file_path.is_file():
+                # --- Ignore Folder Check ---
+                should_ignore = False
+                if ignore_folders_lower:
+                    try:
+                        relative_path = file_path.relative_to(source_folder)
+                        # Check if any directory component in the relative path is in the ignore list
+                        for part in relative_path.parts[:-1]: # Check only directory parts, not the filename itself
+                            if part.lower() in ignore_folders_lower:
+                                should_ignore = True
+                                break
+                    except ValueError:
+                        # Should not happen if file_path is within source_folder from rglob
+                        tqdm.write(f"Warning: Could not get relative path for {file_path}, skipping ignore check.", file=sys.stderr)
+
+                if should_ignore:
+                    ignored_count += 1
+                    continue # Skip this file
+
+                # --- Standard Checks (Extension, Temp Suffix) ---
+                if file_path.suffix.lower() in SUPPORTED_EXTENSIONS and not file_path.name.endswith(TEMP_SUFFIX):
                     video_files.append(file_path)
+
     except Exception as e:
         print(f"\nError during file scan: {e}", file=sys.stderr)
-    print(f"Found {len(video_files)} potential video files.")
+
+    # Report ignored count only if some were ignored, keep it separate from final stats
+    if ignored_count > 0:
+        print(f"(Skipped {ignored_count} files found within ignored folders)")
+
+    print(f"Found {len(video_files)} potential video files to process.")
     return video_files
+
 
 def filter_existing_files(
     all_video_files: List[Path],
@@ -520,7 +558,7 @@ def filter_existing_files(
 def parse_arguments() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Convert video files to MP3, optionally adding metadata and album art. Uses temporary files for safety. Skips videos with no audio stream.",
+        description="Convert video files to MP3, optionally adding metadata and album art. Uses temporary files for safety. Skips videos with no audio stream and ignores specified folders.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("source_folder", help="Path to the folder containing video files (scanned recursively).")
@@ -532,6 +570,9 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("-i","--album-art", type=str, default=None, metavar="IMAGE_PATH", help="Path to an image file (jpg/png) to embed as album art.")
     parser.add_argument("--ffmpeg", default=None, help="Optional: Explicit path to ffmpeg executable.")
     parser.add_argument("--ffprobe", default=None, help="Optional: Explicit path to ffprobe executable.")
+    # Add argument for ignore folders (optional, can also just edit the list)
+    parser.add_argument("--ignore-folder", action='append', default=[], help="Add a folder name to ignore (case-insensitive). Can be used multiple times. Overrides internal list if used.")
+
     return parser.parse_args()
 
 def validate_args_and_paths(args: argparse.Namespace) -> Tuple[Path, Path, int, int, bool]:
@@ -560,6 +601,14 @@ def validate_args_and_paths(args: argparse.Namespace) -> Tuple[Path, Path, int, 
          bitrate = 192
 
     add_metadata_flag = not args.no_metadata
+
+    # --- Handle Ignore Folders Argument ---
+    # If the command-line argument is used, it *replaces* the hardcoded list
+    global IGNORE_FOLDERS
+    if args.ignore_folder:
+        IGNORE_FOLDERS = args.ignore_folder
+        print(f"Using specified ignore folders: {', '.join(IGNORE_FOLDERS)}")
+
 
     return source_path, output_path_base, threads, bitrate, add_metadata_flag
 
@@ -683,38 +732,38 @@ def process_files_concurrently(
 # --- Summary Reporting ---
 
 def print_summary(
-    total_files_found: int,
-    skipped_initially_count: int, # Files skipped because final .mp3 existed
-    skipped_no_audio_count: int,  # Files skipped because no audio stream detected
-    total_attempted: int,         # Files actually sent to process_files_concurrently (total_found - skipped_initial - skipped_no_audio?) No, total submitted = len(files_to_process)
+    total_files_found: int,          # Files found *after* ignoring folders
+    skipped_initially_count: int,    # Files skipped because final .mp3 existed
+    skipped_no_audio_count: int,     # Files skipped because no audio stream detected
+    total_submitted_for_process: int,# Files actually sent to the thread pool
     success_count: int,
     copied_count: int,
     converted_count: int,
-    failed_count: int,            # Files failed during conversion/rename/internal error (excluding no_audio skips)
-    skipped_during_process_count: int, # Files skipped by the worker (e.g., output existed just before rename)
+    failed_count: int,               # Files failed during conversion/rename/internal error (excluding no_audio skips)
+    skipped_during_process_count: int,# Files skipped by the worker (e.g., output existed just before rename)
     metadata_added_count: int,
-    metadata_skipped_count: int,  # No pattern matched for text meta
-    metadata_failed_count: int,   # Error during tagging process
+    metadata_skipped_count: int,     # No pattern matched for text meta
+    metadata_failed_count: int,      # Error during tagging process
     add_metadata_flag: bool,
     album_art_provided: bool
 ):
     """Prints the final summary of the conversion process."""
     print("\n" + "=" * 30)
     print(" Processing Summary ".center(30, "="))
-    print(f"Total Video Files Found:      {total_files_found}")
-    print(f"Skipped (Output Existed):     {skipped_initially_count}")
-    print(f"Skipped (No Audio Stream):    {skipped_no_audio_count}") # Added this line
-    print(f"-----------------------------")
-    print(f"Files Submitted for Process:  {total_attempted}")
-    print(f"  Successfully Processed:     {success_count} ({copied_count} copied, {converted_count} converted)")
+    print(f"Video Files Found (excl. ignored): {total_files_found}") # Clarified label
+    print(f"Skipped (Output Existed):          {skipped_initially_count}")
+    print(f"Skipped (No Audio Stream):         {skipped_no_audio_count}")
+    print(f"----------------------------------")
+    print(f"Files Submitted for Processing:    {total_submitted_for_process}")
+    print(f"  Successfully Processed:          {success_count} ({copied_count} copied, {converted_count} converted)")
     # Display metadata stats only if it was relevant
     if add_metadata_flag or album_art_provided:
         # Indent metadata stats under success count
-        print(f"    Metadata Added/Updated:   {metadata_added_count}")
-        print(f"    Metadata Skipped (No Match):{metadata_skipped_count}")
-        print(f"    Metadata Tagging Failed:  {metadata_failed_count}") # Note: Tagging failures count towards overall failed_count too
-    print(f"  Skipped during processing:  {skipped_during_process_count}") # e.g., race condition where output appeared
-    print(f"  Failed (Error/Convert/Tag): {failed_count}") # This now excludes the 'skipped_no_audio' cases
+        print(f"    Metadata Added/Updated:        {metadata_added_count}")
+        print(f"    Metadata Skipped (No Match):   {metadata_skipped_count}")
+        print(f"    Metadata Tagging Failed:       {metadata_failed_count}") # Note: Tagging failures count towards overall failed_count too
+    print(f"  Skipped during processing:       {skipped_during_process_count}") # e.g., race condition where output appeared
+    print(f"  Failed (Error/Convert/Tag):      {failed_count}") # This now excludes the 'skipped_no_audio' cases
     print("=" * 30)
 
 # --- Startup Cleanup ---
@@ -754,6 +803,7 @@ def initial_cleanup(output_base: Path):
 def main():
     """Main script execution function."""
     args = parse_arguments()
+    # Validation now also handles updating IGNORE_FOLDERS based on args
     source_path, output_path_base, threads, bitrate, add_metadata_flag = validate_args_and_paths(args)
 
     # --- Initial Cleanup ---
@@ -772,37 +822,43 @@ def main():
     print("-" * 30)
 
     # --- Find and Filter Files ---
+    # find_video_files now skips ignored folders
     all_video_files = find_video_files(source_path)
-    total_files_found = len(all_video_files)
+    total_files_found = len(all_video_files) # This count already excludes ignored folders
     if total_files_found == 0:
-        print("No video files found matching extensions:", ', '.join(SUPPORTED_EXTENSIONS))
+        print("No video files found matching extensions (or all were in ignored folders):", ', '.join(SUPPORTED_EXTENSIONS))
         sys.exit(0)
 
     files_to_process, skipped_initially_count = filter_existing_files(
         all_video_files, source_path, output_path_base, args.overwrite
     )
-    total_to_process = len(files_to_process) # Number of files we will attempt based on existence check
+    # Actual number submitted to the pool
+    actual_submitted_count = len(files_to_process)
 
     if skipped_initially_count > 0:
         print(f"Skipped {skipped_initially_count} files as corresponding final MP3s already exist (use -o to overwrite).")
-    if total_to_process == 0 and skipped_initially_count > 0:
-        print("No new files to process (all existing outputs found).")
+
+    if actual_submitted_count == 0:
+        if skipped_initially_count > 0:
+             print("No new files to process (all remaining found files already have existing outputs).")
+        else:
+            # This means files were found, but filter_existing removed them all
+             print("No files left to process after checking for existing output.")
         sys.exit(0)
-    elif total_to_process == 0 and skipped_initially_count == 0:
-        # This case shouldn't happen if total_files_found > 0, but handle defensively
-        print("No files found to process after filtering.")
-        sys.exit(0)
+
 
     print("-" * 30)
 
     # --- Processing Information ---
-    print(f"Starting processing for up to {total_to_process} files using {threads} threads...")
+    print(f"Starting processing for {actual_submitted_count} files using {threads} threads...")
     print(f"Source:      {source_path}")
     print(f"Output:      {output_path_base}")
     print(f"Bitrate:     {bitrate} kbps (for re-encoding)")
     print(f"Overwrite:   {'Yes' if args.overwrite else 'No'}")
     print(f"Add Text Meta:{'Yes' if add_metadata_flag else 'No'}")
     print(f"Add Album Art:{'Yes' if album_art_provided else 'No'}")
+    if IGNORE_FOLDERS: # Remind user about ignored folders if list is active
+        print(f"Ignoring:    {', '.join(IGNORE_FOLDERS)}")
     print("-" * 30)
 
     # --- Initialize Counters ---
@@ -819,8 +875,6 @@ def main():
         threads
     )
 
-    # Calculate actual number submitted for progress bar reference
-    actual_submitted_count = len(files_to_process)
 
     for status, input_path, output_or_error, action, meta_status in results_iterator:
         # Determine display name safely
@@ -865,10 +919,10 @@ def main():
 
     # --- Print Summary ---
     print_summary(
-        total_files_found,
+        total_files_found,         # Files found after ignoring folders
         skipped_initially_count,
-        skipped_no_audio_count, # Pass the new counter
-        actual_submitted_count, # Use the actual number submitted
+        skipped_no_audio_count,
+        actual_submitted_count,    # Use the actual number submitted
         success_count, copied_count, converted_count, failed_count,
         skipped_during_process_count,
         metadata_added_count, metadata_skipped_count, metadata_failed_count,
@@ -883,21 +937,21 @@ def main():
     if final_error_count > 0:
         print(f"\nWARNING: {final_error_count} files encountered errors during processing. Check logs above.", file=sys.stderr)
         sys.exit(1)
-    elif skipped_initially_count > 0 and actual_submitted_count == 0 and skipped_no_audio_count == 0:
-         print("\nAll matching files already had existing MP3s.")
-         sys.exit(0)
-    elif total_files_found == 0:
-        # Already handled earlier, but double check
-        print("\nNo video files found to process.")
+    elif total_files_found == 0: # Already handled earlier, but catch here too
+        print("\nNo processable video files found in the specified source (considering ignored folders).")
         sys.exit(0)
-    elif success_count == 0 and skipped_no_audio_count > 0 and failed_count == 0 and skipped_during_process_count == 0 and skipped_initially_count == 0:
+    elif actual_submitted_count == 0: # Files were found, but all skipped before processing
+         if skipped_initially_count > 0:
+              print("\nProcessing complete. All found files were skipped because output already existed.")
+         else: # Should not happen based on earlier checks, but covers edge cases
+              print("\nProcessing complete. No files were submitted for conversion.")
+         sys.exit(0)
+    elif success_count == 0 and skipped_no_audio_count > 0 and failed_count == 0 and skipped_during_process_count == 0:
         print("\nProcessing complete. All submitted files were skipped due to lacking audio streams.")
         sys.exit(0)
-    elif success_count == 0 and skipped_no_audio_count == 0 and failed_count == 0 and skipped_during_process_count == 0 and skipped_initially_count > 0:
-         print("\nProcessing complete. All submitted files were skipped because output existed.")
-         sys.exit(0)
+    # Add other conditions if needed (e.g., only skips occurred)
     else:
-        # Covers cases with success, or a mix of success/skips
+        # Covers cases with success, or a mix of success/skips without errors
         print("\nAll tasks completed.")
         sys.exit(0)
 
