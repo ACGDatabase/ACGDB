@@ -238,7 +238,7 @@ def build_ffmpeg_command(
     # We rely on get_audio_codec result, but FFmpeg will ultimately decide based on stream content
     if original_audio_codec == 'mp3':
         # Copy MP3 stream if ffprobe identified it as mp3
-        command = common_opts + ['-codec:a', 'copy', str(temp_output_path)]
+        command = common_opts + ['-codec:a', 'copy', '-f','mp3', str(temp_output_path)]
         action = "copied"
     else:
         # Convert to MP3 for other codecs or if codec detection failed/was inconclusive
