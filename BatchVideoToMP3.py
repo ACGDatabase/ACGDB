@@ -63,9 +63,16 @@ FILENAME_METADATA_REGEX: re.Pattern = re.compile(
 # Standard ID3 picture type for Cover (front)
 ID3_PIC_TYPE_COVER_FRONT = 3
 TEMP_SUFFIX = ".tmp" # Define the temporary suffix
+# Specific FFmpeg error messages indicating no audio stream
+NO_AUDIO_STREAM_ERRORS = (
+    "Stream map '0:a:0' matches no streams", # Common when using -map 0:a:0?
+    "Output file #0 does not contain any stream" # Can happen if -map isn't used but still no audio
+)
+
 
 # --- Helper Types ---
 FFmpegResult = Tuple[bool, Optional[str]] # (success, error_message)
+# Added 'skipped_no_audio' to status types
 ConversionResult = Tuple[str, Path, Any, str, str] # (status, input_path, output_or_error, action, metadata_status)
 
 # --- Core Logic Functions ---
@@ -94,11 +101,19 @@ def get_audio_codec(video_path: Path, ffprobe_path: str) -> Optional[str]:
         data = json.loads(process.stdout)
         if data and 'streams' in data and data['streams']:
             return data['streams'][0].get('codec_name')
-        return None
+        # If ffprobe runs successfully but finds no streams, return specific indicator
+        return "no_audio_stream_found_by_ffprobe"
     except FileNotFoundError:
          tqdm.write(f"\nERROR: ffprobe executable not found at '{ffprobe_path}'. Cannot check audio codec.", file=sys.stderr)
          return None
-    except (subprocess.CalledProcessError, json.JSONDecodeError, Exception) as e:
+    except subprocess.CalledProcessError as e:
+        # Check if ffprobe failed because there were no streams selected
+        if "does not contain any stream" in e.stderr or "could not find codec parameters" in e.stderr:
+             # This indicates successful run but no audio stream
+             return "no_audio_stream_found_by_ffprobe"
+        tqdm.write(f"Warning: Could not get audio codec for {video_path.name} (will attempt conversion). FFprobe Error: {e.stderr}", file=sys.stderr)
+        return None # Indicate error occurred, distinct from no audio found
+    except (json.JSONDecodeError, Exception) as e:
         tqdm.write(f"Warning: Could not get audio codec for {video_path.name} (will attempt conversion). Error: {e}", file=sys.stderr)
         return None
 
@@ -195,33 +210,33 @@ def build_ffmpeg_command(
     temp_output_path: Path, # Takes the temporary path now
     ffmpeg_path: str,
     original_audio_codec: Optional[str],
-    bitrate_k: int,
-    overwrite: bool # Overwrite applies to the *final* destination logic, -y ensures ffmpeg can overwrite the temp if needed
+    bitrate_k: int
+    # Removed overwrite flag here - it's handled during rename check. FFmpeg always uses -y for temp file.
 ) -> Tuple[List[str], str]:
     """Constructs the appropriate ffmpeg command list and determines the action."""
     common_opts: List[str] = [
         ffmpeg_path,
         '-y', # Always allow ffmpeg to overwrite the temp file if it somehow exists
         '-i', str(video_path),
-        '-vn',
-        '-loglevel', 'error',
+        '-vn', # Disable video recording
+        '-loglevel', 'error', # Only show errors
         '-hide_banner',
         # Strip existing metadata from video - we'll add fresh tags later
         '-map_metadata', '-1',
-        # map only the audio stream to the output
-        '-map', '0:a:0?', # Map first audio stream, '?' makes it optional if no audio exists
+        # map only the first audio stream to the output, fail if none exists initially
+        '-map', '0:a:0?', # Map first audio stream, '?' makes it optional (but FFmpeg might still error if *no* output stream results)
     ]
 
     action: str
     command: List[str]
 
+    # We rely on get_audio_codec result, but FFmpeg will ultimately decide based on stream content
     if original_audio_codec == 'mp3':
-        # Use the temp path for output. -f mp3 isn't strictly needed for copy
-        # as FFmpeg usually handles container correctly when copying MP3 stream.
+        # Copy MP3 stream if ffprobe identified it as mp3
         command = common_opts + ['-codec:a', 'copy', str(temp_output_path)]
         action = "copied"
     else:
-        # Use the temp path for output AND explicitly set format to mp3
+        # Convert to MP3 for other codecs or if codec detection failed/was inconclusive
         command = common_opts + [
             '-codec:a', 'libmp3lame',
             '-ab', f'{bitrate_k}k',
@@ -241,11 +256,12 @@ def run_ffmpeg(command: List[str]) -> FFmpegResult:
         if process.returncode == 0:
             return True, None
         else:
-            # Removed the specific check for '-n' error message as we always use '-y' now.
             error_msg = f"FFmpeg error (code {process.returncode}):\n--- FFMPEG STDERR ---\n{process.stderr.strip()}"
-            # Check if it failed because no audio stream was found with -map 0:a:0?
-            if "Stream map '0:a:0' matches no streams" in process.stderr:
-                error_msg += "\n(Likely reason: No audio stream found in the input video)"
+            # Check for specific "no audio stream" errors
+            is_no_audio_error = any(err_msg in process.stderr for err_msg in NO_AUDIO_STREAM_ERRORS)
+            if is_no_audio_error:
+                # Append a more user-friendly reason if possible
+                 error_msg += "\n(Likely reason: No audio stream found in the input video)"
             return False, error_msg
     except Exception as e:
         return False, f"Failed to run ffmpeg command: {e}"
@@ -338,18 +354,30 @@ def convert_single_video(
              return 'skipped', video_path, output_path, 'skipped', 'not_attempted'
 
 
-        # --- Determine Audio Codec ---
+        # --- Determine Audio Codec (and check for existence) ---
         original_audio_codec = get_audio_codec(video_path, ffprobe_path)
+        # Check if ffprobe explicitly found no audio stream
+        if original_audio_codec == "no_audio_stream_found_by_ffprobe":
+             # No need to even run ffmpeg if ffprobe already confirmed no audio
+             return 'skipped_no_audio', video_path, "No audio stream detected by ffprobe", 'skipped', 'not_attempted'
+
 
         # --- Build and Run FFmpeg Command (to Temp File) ---
+        # Pass overwrite=False here, as FFmpeg uses '-y' for the temp file itself
         command, action = build_ffmpeg_command(
-            video_path, temp_output_path, ffmpeg_path, original_audio_codec, bitrate_k, overwrite
+            video_path, temp_output_path, ffmpeg_path, original_audio_codec, bitrate_k
         )
         success, ffmpeg_error = run_ffmpeg(command)
 
+        # --- Handle FFmpeg Result ---
         if not success:
             cleanup_temp_file(temp_output_path)
-            return 'failed', video_path, ffmpeg_error, action, metadata_status
+            # Check if the failure was due to no audio stream
+            if ffmpeg_error and any(err_msg in ffmpeg_error for err_msg in NO_AUDIO_STREAM_ERRORS):
+                return 'skipped_no_audio', video_path, "No audio stream found by FFmpeg", action, metadata_status
+            else:
+                # Otherwise, it's a genuine failure
+                return 'failed', video_path, ffmpeg_error, action, metadata_status
 
         # --- Verify Temporary Output ---
         if not verify_output(temp_output_path):
@@ -416,11 +444,13 @@ def convert_single_video(
             return 'failed', video_path, error_msg, action, 'failed' # Metadata status becomes failed as rename failed
 
     except Exception as e:
-        error_msg = f"Unexpected Python error processing {video_path.name}: {e}"
         # Ensure cleanup happens even with unexpected errors
         if temp_output_path: cleanup_temp_file(temp_output_path)
         # Determine final meta status - if tagging was attempted and failed before this error, keep 'failed'
         final_meta_status = metadata_status if metadata_status in ['failed', 'added', 'skipped'] else 'failed'
+        # Add traceback for better debugging of unexpected Python errors
+        import traceback
+        error_msg = f"Unexpected Python error processing {video_path.name}: {e}\n{traceback.format_exc()}"
         return 'failed', video_path, error_msg, action, final_meta_status
 
 
@@ -436,7 +466,8 @@ def find_video_files(source_folder: Path) -> List[Path]:
         # Wrap generator with tqdm if list conversion is too slow for large dirs
         # Convert to list for stable progress bar, handle potential large directories
         try:
-            all_files_list = list(tqdm(all_files_gen, desc="Discovering files", unit="file", leave=False, ncols=100, miniters=1000)) # Adjust miniters
+            # Adjust miniters/mininterval for smoother progress bar on very fast scans
+            all_files_list = list(tqdm(all_files_gen, desc="Discovering files", unit="file", leave=False, ncols=100, miniters=100, mininterval=0.1))
         except TypeError: # Handle cases where len() is not supported directly
             all_files_list = list(all_files_gen)
             print("Found a large number of files, discovery progress bar may be inaccurate.")
@@ -489,7 +520,7 @@ def filter_existing_files(
 def parse_arguments() -> argparse.Namespace:
     """Parses command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Convert video files to MP3, optionally adding metadata and album art. Uses temporary files for safety.",
+        description="Convert video files to MP3, optionally adding metadata and album art. Uses temporary files for safety. Skips videos with no audio stream.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser.add_argument("source_folder", help="Path to the folder containing video files (scanned recursively).")
@@ -511,11 +542,6 @@ def validate_args_and_paths(args: argparse.Namespace) -> Tuple[Path, Path, int, 
     if not source_path.is_dir():
         print(f"Error: Source folder '{args.source_folder}' not found or is not a directory.", file=sys.stderr)
         sys.exit(1)
-
-    # No need to check if output is a file, mkdir will handle it or fail.
-    # if output_path_base.exists() and not output_path_base.is_dir():
-    #      print(f"Error: Output path '{args.output_folder}' exists but is not a directory.", file=sys.stderr)
-    #      sys.exit(1)
 
     try:
         output_path_base.mkdir(parents=True, exist_ok=True)
@@ -552,14 +578,35 @@ def load_album_art(image_path_str: Optional[str]) -> Tuple[Optional[bytes], Opti
             image_data = f.read()
 
         mime_type, _ = mimetypes.guess_type(str(image_path)) # Use str() for guess_type
-        if not mime_type or not mime_type.startswith('image/'):
-            supported_mimes = ('image/jpeg', 'image/png', 'image/gif') # Add more if needed by mutagen/ID3
-            if mime_type not in supported_mimes:
-                tqdm.write(f"Warning: Unsupported image MIME type '{mime_type}' for {image_path.name}. Supported: {supported_mimes}. Skipping album art.", file=sys.stderr)
-                return None, None
+
+        # Allow common image types even if guess fails, as mutagen might support them.
+        # Focus check on whether it *looks* like an image mime type.
+        supported_mimes = ('image/jpeg', 'image/png', 'image/gif') # Key types for ID3
+        is_supported = False
+        if mime_type:
+            mime_type_lower = mime_type.lower()
+            if mime_type_lower.startswith('image/'):
+                 # If it's a known supported type, great.
+                 if mime_type_lower in supported_mimes:
+                     is_supported = True
+                 else:
+                     # If it's another image type, warn but proceed. Mutagen might handle it.
+                     tqdm.write(f"Warning: Album art MIME type '{mime_type}' is not guaranteed to be supported by all players, but attempting embedding.", file=sys.stderr)
+                     is_supported = True # Try it anyway
             else:
-                 tqdm.write(f"Warning: Could not confidently determine image MIME type for {image_path.name}, but attempting with '{mime_type}'.", file=sys.stderr)
-                 # Allow common types even if guess is uncertain, mutagen might handle it.
+                 # If mimetypes guessed something that isn't an image
+                 tqdm.write(f"Warning: Detected MIME type '{mime_type}' for album art file {image_path.name} is not an image type. Skipping album art.", file=sys.stderr)
+                 return None, None
+        else:
+             # If mimetypes couldn't guess, maybe check extension? Or just warn and proceed?
+             # Let's warn and skip if we can't even guess it's an image.
+             tqdm.write(f"Warning: Could not determine MIME type for album art file {image_path.name}. Skipping album art.", file=sys.stderr)
+             return None, None
+
+        if not is_supported: # Should not be reachable if logic above is correct, but as safeguard.
+            tqdm.write(f"Warning: Album art MIME type '{mime_type}' not supported or identified correctly. Skipping album art.", file=sys.stderr)
+            return None, None
+
 
         print(f"Album art loaded: {image_path} (Type: {mime_type})")
         return image_data, mime_type
@@ -599,25 +646,31 @@ def process_files_concurrently(
         }
 
         # Use tqdm directly on as_completed for progress
-        for future in tqdm(as_completed(futures), total=len(files_to_process), desc="Converting", unit="file", ncols=100):
+        for future in tqdm(as_completed(futures), total=len(files_to_process), desc="Converting", unit="file", ncols=100, smoothing=0.05): # Added smoothing
             video_path_orig = futures[future]
             rel_input_str = "Unknown"
             try:
-                rel_input = video_path_orig.relative_to(source_path)
-                rel_input_str = str(rel_input)
-                # Update postfix dynamically - use short name
-                # pbar.set_postfix_str(f"{rel_input.name[:30]}...", refresh=False) # tqdm handles refresh with iterators
+                # Calculate relative path for logging before potential errors in future.result()
+                try:
+                     rel_input = video_path_orig.relative_to(source_path)
+                     rel_input_str = str(rel_input)
+                except ValueError:
+                     rel_input_str = str(video_path_orig) # Fallback
 
                 result: ConversionResult = future.result()
                 yield result
 
             except Exception as exc:
-                 # This catches exceptions *within* the future processing itself (less likely with try/except in worker)
+                 # This catches exceptions *within* the future processing itself (if not caught by convert_single_video)
                  # Or exceptions during future.result() call.
                  tqdm.write(f"\nCRITICAL WORKER ERROR: {rel_input_str}\n  Reason: {exc}", file=sys.stderr)
+                 import traceback
+                 traceback.print_exc(file=sys.stderr) # Print stack trace for debugging
+
                  # Try to find associated temp file and clean it up if possible (best effort)
                  try:
-                      relative_path = video_path_orig.relative_to(source_path)
+                      # Recalculate paths needed for cleanup
+                      relative_path = video_path_orig.relative_to(source_path) # May fail if source_path is odd
                       output_path = output_base / relative_path.with_suffix('.mp3')
                       temp_output_path = output_path.with_suffix(output_path.suffix + TEMP_SUFFIX)
                       cleanup_temp_file(temp_output_path)
@@ -632,11 +685,12 @@ def process_files_concurrently(
 def print_summary(
     total_files_found: int,
     skipped_initially_count: int, # Files skipped because final .mp3 existed
-    total_attempted: int,         # Files actually sent to process_files_concurrently
+    skipped_no_audio_count: int,  # Files skipped because no audio stream detected
+    total_attempted: int,         # Files actually sent to process_files_concurrently (total_found - skipped_initial - skipped_no_audio?) No, total submitted = len(files_to_process)
     success_count: int,
     copied_count: int,
     converted_count: int,
-    failed_count: int,            # Files failed during conversion/rename/internal error
+    failed_count: int,            # Files failed during conversion/rename/internal error (excluding no_audio skips)
     skipped_during_process_count: int, # Files skipped by the worker (e.g., output existed just before rename)
     metadata_added_count: int,
     metadata_skipped_count: int,  # No pattern matched for text meta
@@ -649,16 +703,18 @@ def print_summary(
     print(" Processing Summary ".center(30, "="))
     print(f"Total Video Files Found:      {total_files_found}")
     print(f"Skipped (Output Existed):     {skipped_initially_count}")
+    print(f"Skipped (No Audio Stream):    {skipped_no_audio_count}") # Added this line
     print(f"-----------------------------")
     print(f"Files Submitted for Process:  {total_attempted}")
     print(f"  Successfully Processed:     {success_count} ({copied_count} copied, {converted_count} converted)")
     # Display metadata stats only if it was relevant
     if add_metadata_flag or album_art_provided:
+        # Indent metadata stats under success count
         print(f"    Metadata Added/Updated:   {metadata_added_count}")
         print(f"    Metadata Skipped (No Match):{metadata_skipped_count}")
-        print(f"    Metadata Tagging Failed:  {metadata_failed_count}")
+        print(f"    Metadata Tagging Failed:  {metadata_failed_count}") # Note: Tagging failures count towards overall failed_count too
     print(f"  Skipped during processing:  {skipped_during_process_count}") # e.g., race condition where output appeared
-    print(f"  Failed (Error/Convert/Tag): {failed_count}")
+    print(f"  Failed (Error/Convert/Tag): {failed_count}") # This now excludes the 'skipped_no_audio' cases
     print("=" * 30)
 
 # --- Startup Cleanup ---
@@ -725,18 +781,22 @@ def main():
     files_to_process, skipped_initially_count = filter_existing_files(
         all_video_files, source_path, output_path_base, args.overwrite
     )
-    total_to_process = len(files_to_process) # Number of files we will attempt
+    total_to_process = len(files_to_process) # Number of files we will attempt based on existence check
 
     if skipped_initially_count > 0:
         print(f"Skipped {skipped_initially_count} files as corresponding final MP3s already exist (use -o to overwrite).")
-    if total_to_process == 0:
-        print("No new files to process.")
-        # If some files were skipped, exit code 0 is okay. If no files found at all, also okay.
+    if total_to_process == 0 and skipped_initially_count > 0:
+        print("No new files to process (all existing outputs found).")
         sys.exit(0)
+    elif total_to_process == 0 and skipped_initially_count == 0:
+        # This case shouldn't happen if total_files_found > 0, but handle defensively
+        print("No files found to process after filtering.")
+        sys.exit(0)
+
     print("-" * 30)
 
     # --- Processing Information ---
-    print(f"Starting processing for {total_to_process} files using {threads} threads...")
+    print(f"Starting processing for up to {total_to_process} files using {threads} threads...")
     print(f"Source:      {source_path}")
     print(f"Output:      {output_path_base}")
     print(f"Bitrate:     {bitrate} kbps (for re-encoding)")
@@ -747,7 +807,8 @@ def main():
 
     # --- Initialize Counters ---
     success_count = copied_count = converted_count = failed_count = 0
-    skipped_during_process_count = 0
+    skipped_during_process_count = 0 # Skipped due to race condition (output appeared)
+    skipped_no_audio_count = 0 # Skipped specifically due to lack of audio stream
     metadata_added_count = metadata_skipped_count = metadata_failed_count = 0
 
     # --- Process Files ---
@@ -757,6 +818,9 @@ def main():
         album_art_data, album_art_mime,
         threads
     )
+
+    # Calculate actual number submitted for progress bar reference
+    actual_submitted_count = len(files_to_process)
 
     for status, input_path, output_or_error, action, meta_status in results_iterator:
         # Determine display name safely
@@ -777,25 +841,34 @@ def main():
             if meta_status == 'added': metadata_added_count += 1
             elif meta_status == 'skipped': metadata_skipped_count += 1
             # 'not_attempted' doesn't increment any metadata counter here
-            # 'failed' metadata status leads to overall 'failed' status below
+            # 'failed' metadata status would have led to overall 'failed' status below
 
         elif status == 'failed':
             failed_count += 1
             # Log the failure reason using tqdm.write to avoid messing up progress bar
-            tqdm.write(f"\nFAILED : {rel_input_display}\n  Reason: {output_or_error}", file=sys.stderr)
+            # Add more context to the failure message
+            tqdm.write(f"\nFAILED : {rel_input_display} (Action attempted: {action})\n  Reason: {output_or_error}", file=sys.stderr)
             # If the failure was *specifically* due to failed metadata tagging, increment that counter too
+            # (Note: metadata failure already caused the 'failed' status in convert_single_video)
             if meta_status == 'failed':
                  metadata_failed_count += 1
 
         elif status == 'skipped':
             skipped_during_process_count += 1
-            # Optionally log these skips if they are unexpected
-            # tqdm.write(f"INFO: Skipped during processing: {rel_input_display} - Reason: {output_or_error}", file=sys.stderr)
+            # Optionally log these skips if they are unexpected (e.g., race condition)
+            tqdm.write(f"INFO: Skipped during processing: {rel_input_display} - Reason: {output_or_error}", file=sys.stderr)
 
+        elif status == 'skipped_no_audio': # Handle the new status
+            skipped_no_audio_count += 1
+            # Log these skips informatively
+            tqdm.write(f"INFO: Skipped (No Audio): {rel_input_display} - Reason: {output_or_error}", file=sys.stdout) # Use stdout for info
 
     # --- Print Summary ---
     print_summary(
-        total_files_found, skipped_initially_count, total_to_process,
+        total_files_found,
+        skipped_initially_count,
+        skipped_no_audio_count, # Pass the new counter
+        actual_submitted_count, # Use the actual number submitted
         success_count, copied_count, converted_count, failed_count,
         skipped_during_process_count,
         metadata_added_count, metadata_skipped_count, metadata_failed_count,
@@ -803,21 +876,29 @@ def main():
     )
 
     # --- Determine Exit Code ---
-    # Consider both conversion/file errors and metadata tagging failures as reasons for non-zero exit code
-    final_error_count = failed_count # Includes metadata failures that caused overall failure
+    # Consider only genuine conversion/file/tagging errors for non-zero exit code.
+    # Skipped files (existing, no audio) are not errors in this context.
+    final_error_count = failed_count
 
     if final_error_count > 0:
         print(f"\nWARNING: {final_error_count} files encountered errors during processing. Check logs above.", file=sys.stderr)
         sys.exit(1)
-    elif skipped_initially_count > 0 and total_to_process == 0:
+    elif skipped_initially_count > 0 and actual_submitted_count == 0 and skipped_no_audio_count == 0:
          print("\nAll matching files already had existing MP3s.")
          sys.exit(0)
     elif total_files_found == 0:
         # Already handled earlier, but double check
         print("\nNo video files found to process.")
         sys.exit(0)
+    elif success_count == 0 and skipped_no_audio_count > 0 and failed_count == 0 and skipped_during_process_count == 0 and skipped_initially_count == 0:
+        print("\nProcessing complete. All submitted files were skipped due to lacking audio streams.")
+        sys.exit(0)
+    elif success_count == 0 and skipped_no_audio_count == 0 and failed_count == 0 and skipped_during_process_count == 0 and skipped_initially_count > 0:
+         print("\nProcessing complete. All submitted files were skipped because output existed.")
+         sys.exit(0)
     else:
-        print("\nAll tasks completed successfully.")
+        # Covers cases with success, or a mix of success/skips
+        print("\nAll tasks completed.")
         sys.exit(0)
 
 
