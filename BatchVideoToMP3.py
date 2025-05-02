@@ -109,13 +109,13 @@ def get_audio_codec(video_path: Path, ffprobe_path: str) -> Optional[str]:
         # If ffprobe runs successfully but finds no streams, return specific indicator
         return "no_audio_stream_found_by_ffprobe"
     except FileNotFoundError:
-         tqdm.write(f"\nERROR: ffprobe executable not found at '{ffprobe_path}'. Cannot check audio codec.", file=sys.stderr)
-         return None
+        tqdm.write(f"\nERROR: ffprobe executable not found at '{ffprobe_path}'. Cannot check audio codec.", file=sys.stderr)
+        return None
     except subprocess.CalledProcessError as e:
         # Check if ffprobe failed because there were no streams selected
         if "does not contain any stream" in e.stderr or "could not find codec parameters" in e.stderr:
-             # This indicates successful run but no audio stream
-             return "no_audio_stream_found_by_ffprobe"
+            # This indicates successful run but no audio stream
+            return "no_audio_stream_found_by_ffprobe"
         tqdm.write(f"Warning: Could not get audio codec for {video_path.name} (will attempt conversion). FFprobe Error: {e.stderr}", file=sys.stderr)
         return None # Indicate error occurred, distinct from no audio found
     except (json.JSONDecodeError, Exception) as e:
@@ -154,34 +154,34 @@ def add_metadata_to_mp3(
     """
     try:
         try:
-             audio = MP3(mp3_path, ID3=ID3)
+            audio = MP3(mp3_path, ID3=ID3)
         except ID3NoHeaderError:
-             audio = MP3(mp3_path)
-             # If no ID3 header, try adding one
-             try:
-                 audio.add_tags()
-             except Exception as add_tags_err:
-                 tqdm.write(f"Warning: Could not add ID3 tag structure to {mp3_path.name}. Metadata might not be saved. Error: {add_tags_err}", file=sys.stderr)
-                 # Attempt to proceed without tags if structure couldn't be added
-                 if audio.tags is None: # If tags are still None, fail
-                     raise ValueError(f"Failed to initialize ID3 tags for {mp3_path.name}") from add_tags_err
+            audio = MP3(mp3_path)
+            # If no ID3 header, try adding one
+            try:
+                audio.add_tags()
+            except Exception as add_tags_err:
+                tqdm.write(f"Warning: Could not add ID3 tag structure to {mp3_path.name}. Metadata might not be saved. Error: {add_tags_err}", file=sys.stderr)
+                # Attempt to proceed without tags if structure couldn't be added
+                if audio.tags is None: # If tags are still None, fail
+                    raise ValueError(f"Failed to initialize ID3 tags for {mp3_path.name}") from add_tags_err
 
         # Ensure tags attribute exists after attempting to add them
         if audio.tags is None:
-             audio.tags = ID3() # Create an empty ID3 object if still missing
+            audio.tags = ID3() # Create an empty ID3 object if still missing
 
         # --- Add/Update Text Metadata ---
         if metadata.get('artist'):
             audio.tags.add(TPE1(encoding=Encoding.UTF8, text=metadata['artist']))
         if metadata.get('title'):
-             audio.tags.add(TIT2(encoding=Encoding.UTF8, text=metadata['title']))
+            audio.tags.add(TIT2(encoding=Encoding.UTF8, text=metadata['title']))
         if metadata.get('date'):
-             # Validate date format slightly before adding (basic YYYY-MM-DD check)
-             date_str = metadata['date']
-             if re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
-                 audio.tags.add(TDRC(encoding=Encoding.UTF8, text=date_str))
-             else:
-                 tqdm.write(f"Warning: Skipping invalid date format '{date_str}' for {mp3_path.name}. Expected YYYY-MM-DD.", file=sys.stderr)
+            # Validate date format slightly before adding (basic YYYY-MM-DD check)
+            date_str = metadata['date']
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", date_str):
+                audio.tags.add(TDRC(encoding=Encoding.UTF8, text=date_str))
+            else:
+                tqdm.write(f"Warning: Skipping invalid date format '{date_str}' for {mp3_path.name}. Expected YYYY-MM-DD.", file=sys.stderr)
 
 
         comment_text = f"Original Filename Stem: {metadata.get('original_filename', mp3_path.stem.replace(TEMP_SUFFIX,''))}" # Clean temp suffix for comment
@@ -267,7 +267,7 @@ def run_ffmpeg(command: List[str]) -> FFmpegResult:
             is_no_audio_error = any(err_msg in process.stderr for err_msg in NO_AUDIO_STREAM_ERRORS)
             if is_no_audio_error:
                 # Append a more user-friendly reason if possible
-                 error_msg += "\n(Likely reason: No audio stream found in the input video)"
+                error_msg += "\n(Likely reason: No audio stream found in the input video)"
             return False, error_msg
     except Exception as e:
         return False, f"Failed to run ffmpeg command: {e}"
@@ -304,13 +304,13 @@ def handle_metadata_tagging(
     metadata = extract_metadata_from_filename(filename_stem) or {} # Use empty dict if no match
 
     if not metadata and not (image_data and image_mime):
-         # This case is already covered by the first check, but keep for clarity
-         return 'skipped' # No text match and no art provided
+        # This case is already covered by the first check, but keep for clarity
+        return 'skipped' # No text match and no art provided
 
     if not metadata and add_metadata_flag: # Log only if text meta was expected but not found
-         # Check if the original filename itself matches the ignore pattern to suppress this message
-         # This check might be redundant if file is already excluded, but good safeguard
-         if not any(part.lower() == ignored.lower() for part in video_path.parts for ignored in IGNORE_FOLDERS):
+        # Check if the original filename itself matches the ignore pattern to suppress this message
+        # This check might be redundant if file is already excluded, but good safeguard
+        if not any(part.lower() == ignored.lower() for part in video_path.parts for ignored in IGNORE_FOLDERS):
             tqdm.write(f"Info: No metadata pattern matched for '{filename_stem}', skipping text tagging.")
 
     # Attempt to add metadata (text and/or art)
@@ -319,11 +319,11 @@ def handle_metadata_tagging(
         if metadata and (image_data and image_mime):
             return 'added' # Both attempted and succeeded (or just text/just art if only one provided)
         elif metadata:
-             return 'added' # Only text attempted and succeeded
+            return 'added' # Only text attempted and succeeded
         elif image_data and image_mime:
-             return 'added' # Only art attempted and succeeded
+            return 'added' # Only art attempted and succeeded
         else:
-             return 'skipped' # Should not happen if initial checks are correct
+            return 'skipped' # Should not happen if initial checks are correct
     else:
         return 'failed' # Tagging failed
 
@@ -360,16 +360,16 @@ def convert_single_video(
 
         # --- Pre-flight Check (Final Destination) ---
         if not overwrite and output_path.exists():
-             # This check should ideally be caught by filter_existing_files, but double-check
-             return 'skipped', video_path, output_path, 'skipped', 'not_attempted'
+            # This check should ideally be caught by filter_existing_files, but double-check
+            return 'skipped', video_path, output_path, 'skipped', 'not_attempted'
 
 
         # --- Determine Audio Codec (and check for existence) ---
         original_audio_codec = get_audio_codec(video_path, ffprobe_path)
         # Check if ffprobe explicitly found no audio stream
         if original_audio_codec == "no_audio_stream_found_by_ffprobe":
-             # No need to even run ffmpeg if ffprobe already confirmed no audio
-             return 'skipped_no_audio', video_path, "No audio stream detected by ffprobe", 'skipped', 'not_attempted'
+            # No need to even run ffmpeg if ffprobe already confirmed no audio
+            return 'skipped_no_audio', video_path, "No audio stream detected by ffprobe", 'skipped', 'not_attempted'
 
 
         # --- Build and Run FFmpeg Command (to Temp File) ---
@@ -408,7 +408,7 @@ def convert_single_video(
                 cleanup_temp_file(temp_output_path)
                 return 'failed', video_path, error_message, action, metadata_status
         else:
-             metadata_status = 'not_attempted' # Explicitly set if no tagging was done
+            metadata_status = 'not_attempted' # Explicitly set if no tagging was done
 
 
         # --- Final Rename ---
@@ -419,9 +419,9 @@ def convert_single_video(
                     try:
                         output_path.unlink() # Remove final destination if overwriting
                     except OSError as e:
-                         error_message = f"Cannot overwrite existing file {output_path.name}: {e}"
-                         cleanup_temp_file(temp_output_path)
-                         return 'failed', video_path, error_message, action, metadata_status
+                        error_message = f"Cannot overwrite existing file {output_path.name}: {e}"
+                        cleanup_temp_file(temp_output_path)
+                        return 'failed', video_path, error_message, action, metadata_status
                 else:
                     # This should not happen if initial checks worked, but handle defensively
                     error_message = f"Final output file {output_path.name} appeared unexpectedly before rename (and overwrite is False)."
@@ -434,11 +434,11 @@ def convert_single_video(
 
             # --- Final Verification (Optional but Recommended) ---
             if not verify_output(output_path):
-                 error_message = f"Rename appeared successful, but final file is invalid/empty: {output_path.name}"
-                 # Don't cleanup temp here as it's already renamed (or failed rename)
-                 # output_path might exist but be empty, try cleaning it
-                 cleanup_temp_file(output_path) # Try cleaning the potentially bad final file
-                 return 'failed', video_path, error_message, action, metadata_status
+                error_message = f"Rename appeared successful, but final file is invalid/empty: {output_path.name}"
+                # Don't cleanup temp here as it's already renamed (or failed rename)
+                # output_path might exist but be empty, try cleaning it
+                cleanup_temp_file(output_path) # Try cleaning the potentially bad final file
+                return 'failed', video_path, error_message, action, metadata_status
 
             # --- Success ---
             # Status 'success' refers to the conversion/copy *and* rename being successful.
@@ -450,7 +450,7 @@ def convert_single_video(
             cleanup_temp_file(temp_output_path) # Clean up the temp file
             # If rename failed, try to clean up potential partial final file if overwrite was true
             if overwrite and output_path.exists():
-                 cleanup_temp_file(output_path)
+                cleanup_temp_file(output_path)
             return 'failed', video_path, error_msg, action, 'failed' # Metadata status becomes failed as rename failed
 
     except Exception as e:
@@ -547,8 +547,8 @@ def filter_existing_files(
                 else:
                     files_to_process.append(video_path)
             except ValueError:
-                 tqdm.write(f"Warning: Skipping file due to path issue: {video_path}", file=sys.stderr)
-                 skipped_count += 1 # Treat as skipped
+                tqdm.write(f"Warning: Skipping file due to path issue: {video_path}", file=sys.stderr)
+                skipped_count += 1 # Treat as skipped
 
         return files_to_process, skipped_count
     else:
@@ -602,9 +602,9 @@ def validate_args_and_paths(args: argparse.Namespace) -> Tuple[Path, Path, int, 
     # Validate VBR quality level (though argparse choices already does this)
     vbr_quality = args.vbr_quality
     if not 0 <= vbr_quality <= 9:
-         # This check is redundant if argparse choices is used, but good practice
-         tqdm.write(f"Warning: Invalid VBR quality ({vbr_quality}). Using default 3.", file=sys.stderr)
-         vbr_quality = 3
+        # This check is redundant if argparse choices is used, but good practice
+        tqdm.write(f"Warning: Invalid VBR quality ({vbr_quality}). Using default 3.", file=sys.stderr)
+        vbr_quality = 3
 
     add_metadata_flag = not args.no_metadata
 
@@ -641,22 +641,22 @@ def load_album_art(image_path_str: Optional[str]) -> Tuple[Optional[bytes], Opti
         if mime_type:
             mime_type_lower = mime_type.lower()
             if mime_type_lower.startswith('image/'):
-                 # If it's a known supported type, great.
-                 if mime_type_lower in supported_mimes:
-                     is_supported = True
-                 else:
-                     # If it's another image type, warn but proceed. Mutagen might handle it.
-                     tqdm.write(f"Warning: Album art MIME type '{mime_type}' is not guaranteed to be supported by all players, but attempting embedding.", file=sys.stderr)
-                     is_supported = True # Try it anyway
+                # If it's a known supported type, great.
+                if mime_type_lower in supported_mimes:
+                    is_supported = True
+                else:
+                    # If it's another image type, warn but proceed. Mutagen might handle it.
+                    tqdm.write(f"Warning: Album art MIME type '{mime_type}' is not guaranteed to be supported by all players, but attempting embedding.", file=sys.stderr)
+                    is_supported = True # Try it anyway
             else:
-                 # If mimetypes guessed something that isn't an image
-                 tqdm.write(f"Warning: Detected MIME type '{mime_type}' for album art file {image_path.name} is not an image type. Skipping album art.", file=sys.stderr)
-                 return None, None
+                # If mimetypes guessed something that isn't an image
+                tqdm.write(f"Warning: Detected MIME type '{mime_type}' for album art file {image_path.name} is not an image type. Skipping album art.", file=sys.stderr)
+                return None, None
         else:
-             # If mimetypes couldn't guess, maybe check extension? Or just warn and proceed?
-             # Let's warn and skip if we can't even guess it's an image.
-             tqdm.write(f"Warning: Could not determine MIME type for album art file {image_path.name}. Skipping album art.", file=sys.stderr)
-             return None, None
+            # If mimetypes couldn't guess, maybe check extension? Or just warn and proceed?
+            # Let's warn and skip if we can't even guess it's an image.
+            tqdm.write(f"Warning: Could not determine MIME type for album art file {image_path.name}. Skipping album art.", file=sys.stderr)
+            return None, None
 
         if not is_supported: # Should not be reachable if logic above is correct, but as safeguard.
             tqdm.write(f"Warning: Album art MIME type '{mime_type}' not supported or identified correctly. Skipping album art.", file=sys.stderr)
@@ -708,32 +708,32 @@ def process_files_concurrently(
             try:
                 # Calculate relative path for logging before potential errors in future.result()
                 try:
-                     rel_input = video_path_orig.relative_to(source_path)
-                     rel_input_str = str(rel_input)
+                    rel_input = video_path_orig.relative_to(source_path)
+                    rel_input_str = str(rel_input)
                 except ValueError:
-                     rel_input_str = str(video_path_orig) # Fallback
+                    rel_input_str = str(video_path_orig) # Fallback
 
                 result: ConversionResult = future.result()
                 yield result
 
             except Exception as exc:
-                 # This catches exceptions *within* the future processing itself (if not caught by convert_single_video)
-                 # Or exceptions during future.result() call.
-                 tqdm.write(f"\nCRITICAL WORKER ERROR: {rel_input_str}\n  Reason: {exc}", file=sys.stderr)
-                 import traceback
-                 traceback.print_exc(file=sys.stderr) # Print stack trace for debugging
+                # This catches exceptions *within* the future processing itself (if not caught by convert_single_video)
+                # Or exceptions during future.result() call.
+                tqdm.write(f"\nCRITICAL WORKER ERROR: {rel_input_str}\n  Reason: {exc}", file=sys.stderr)
+                import traceback
+                traceback.print_exc(file=sys.stderr) # Print stack trace for debugging
 
-                 # Try to find associated temp file and clean it up if possible (best effort)
-                 try:
-                      # Recalculate paths needed for cleanup
-                      relative_path = video_path_orig.relative_to(source_path) # May fail if source_path is odd
-                      output_path = output_base / relative_path.with_suffix('.mp3')
-                      temp_output_path = output_path.with_suffix(output_path.suffix + TEMP_SUFFIX)
-                      cleanup_temp_file(temp_output_path)
-                 except Exception as cleanup_err:
-                      tqdm.write(f"  Cleanup attempt failed during critical error handling: {cleanup_err}", file=sys.stderr)
+                # Try to find associated temp file and clean it up if possible (best effort)
+                try:
+                    # Recalculate paths needed for cleanup
+                    relative_path = video_path_orig.relative_to(source_path) # May fail if source_path is odd
+                    output_path = output_base / relative_path.with_suffix('.mp3')
+                    temp_output_path = output_path.with_suffix(output_path.suffix + TEMP_SUFFIX)
+                    cleanup_temp_file(temp_output_path)
+                except Exception as cleanup_err:
+                    tqdm.write(f"  Cleanup attempt failed during critical error handling: {cleanup_err}", file=sys.stderr)
 
-                 yield 'failed', video_path_orig, f"Critical Worker Exception: {exc}", 'failed', 'failed'
+                yield 'failed', video_path_orig, f"Critical Worker Exception: {exc}", 'failed', 'failed'
 
 
 # --- Summary Reporting ---
@@ -799,8 +799,8 @@ def initial_cleanup(output_base: Path):
                     tqdm.write(f"Warning: Error removing temp file {tmp_file}: {e}", file=sys.stderr)
 
     except Exception as e:
-         # Catch errors during the rglob scan itself
-         tqdm.write(f"Error during startup cleanup scan in {output_base}: {e}", file=sys.stderr)
+        # Catch errors during the rglob scan itself
+        tqdm.write(f"Error during startup cleanup scan in {output_base}: {e}", file=sys.stderr)
 
     print(f"Startup cleanup complete. Removed {cleanup_count} temporary files.")
     print("-" * 30)
@@ -848,10 +848,10 @@ def main():
 
     if actual_submitted_count == 0:
         if skipped_initially_count > 0:
-             print("No new files to process (all remaining found files already have existing outputs).")
+            print("No new files to process (all remaining found files already have existing outputs).")
         else:
             # This means files were found, but filter_existing removed them all
-             print("No files left to process after checking for existing output.")
+            print("No files left to process after checking for existing output.")
         sys.exit(0)
 
 
@@ -916,7 +916,7 @@ def main():
             # If the failure was *specifically* due to failed metadata tagging, increment that counter too
             # (Note: metadata failure already caused the 'failed' status in convert_single_video)
             if meta_status == 'failed':
-                 metadata_failed_count += 1
+                metadata_failed_count += 1
 
         elif status == 'skipped':
             skipped_during_process_count += 1
@@ -952,11 +952,11 @@ def main():
         print("\nNo processable video files found in the specified source (considering ignored folders).")
         sys.exit(0)
     elif actual_submitted_count == 0: # Files were found, but all skipped before processing
-         if skipped_initially_count > 0:
-              print("\nProcessing complete. All found files were skipped because output already existed.")
-         else: # Should not happen based on earlier checks, but covers edge cases
-              print("\nProcessing complete. No files were submitted for conversion.")
-         sys.exit(0)
+        if skipped_initially_count > 0:
+            print("\nProcessing complete. All found files were skipped because output already existed.")
+        else: # Should not happen based on earlier checks, but covers edge cases
+            print("\nProcessing complete. No files were submitted for conversion.")
+        sys.exit(0)
     elif success_count == 0 and skipped_no_audio_count > 0 and failed_count == 0 and skipped_during_process_count == 0:
         print("\nProcessing complete. All submitted files were skipped due to lacking audio streams.")
         sys.exit(0)
